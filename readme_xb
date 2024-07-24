@@ -82,3 +82,22 @@ fuse_ll_map
     fuse_ll->fuse_handlers[FUSE_SETLK] = fuse_ll_setlk;
     fuse_ll->fuse_handlers[FUSE_FALLOCATE] = fuse_ll_fallocate;
 
+
+
+dpfs_template/main.c -> main
+    hal_params.ops.request_handler = fuse_handler
+    struct dpfs_hal *hal = dpfs_hal_new(&hal_params, false)
+    dpfs_hal_loop(hal)
+        start_low_latency
+            open("/dev/cpu_dma_latency", O_WRONLY)
+        dpfs_hal_loop_static
+            pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)
+            pthread_create(&tdatas[i].thread, NULL, dpfs_hal_loop_static_thread, &tdatas[i])
+                sched_setaffinity(gettid(), sizeof(loop_cpu), &loop_cpu)
+                all_devices_suspended
+                    virtio_fs_ctrl_is_suspended(hal->devices[i].snap_ctrl)
+                dpfs_hal_poll_device(&hal->devices[i])
+                    virtio_fs_ctrl_progress_all_io(dev->snap_ctrl)
+                    virtio_fs_ctrl_progress(dev->snap_ctrl)
+        stop_low_latency
+            close(pm_qos_fd)
