@@ -1,0 +1,84 @@
+git repo: https://github.com/ssbandjl/DPFS
+update submodule: git submodule update --init --recursive
+
+
+DPFS Arch:
+
+dpfs_kv/main.cpp -> main
+    dpfs_fuse_main
+        dpfs_fuse_new
+            fuse_ll_map(f_ll)
+            hal_params.ops.request_handler = fuse_handle_req;
+                fuse_handler_t h = fuse_ll->fuse_handlers[in_hdr->opcode]
+            hal_params.ops.register_device = register_dpfs_device;
+                ndevices++
+            hal_params.ops.unregister_device = unregister_dpfs_device;
+            struct dpfs_hal *hal = dpfs_hal_new(&hal_params, false)
+        dpfs_fuse_loop
+
+
+HAL -> dpfs_hal/src/snap.c
+dpfs_hal_new
+    struct dpfs_hal *hal = calloc(1, sizeof(struct dpfs_hal))
+    nvme_init_logger
+    mlnx_snap_pci_manager_init
+    dpfs_hal_init_dev
+        struct virtio_fs_ctrl_init_attr param
+        struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param)
+        hal->ops.register_device(hal->user_data, device_id)
+    pthread_create(&hal->mock_thread, NULL, dpfs_hal_mock_thread, hal)
+        virtio_fs_ctrl_progress_all_io
+        virtio_fs_ctrl_progress
+        virtio_fs_ctrl_suspend
+
+dpfs_hal_handle_req
+
+
+introduce:
+DPFS 框架允许云和数据中心运营商使用 DPU 卸载为租户提供虚拟化文件系统服务。借助 DPFS，完整的文件系统实现可在 DPU 的 CPU 复合体上运行。租户通过virtio-fsDPU 在 PCIe 上公开的设备（通过 SR-IOV 实现多租户）使用文件系统。DPFS 提供硬件抽象层、FUSE API 实现和多个文件系统实现。, 警告：DPFS 目前是一个研究项目，因此其代码尚未经过实战测试，也不是很干净。请自行决定是否使用
+
+在 BlueField-2（目前仅支持 DPU）上运行所需的 Nvidia SNAP 库是闭源的，需要补丁才能启用异步请求完成
+
+联系方式和致谢
+🇨🇭 IBM 苏黎世研究中心混合云/基础设施软件小组
+🇳🇱 阿姆斯特丹自由大学的 StoNet 研究
+
+
+
+
+
+fuse_ll_map
+    fuse_ll->fuse_handlers[FUSE_INIT] = fuse_ll_init;
+    fuse_ll->fuse_handlers[FUSE_DESTROY] = fuse_ll_destroy;
+    fuse_ll->fuse_handlers[FUSE_GETATTR] = fuse_ll_getattr;
+    fuse_ll->fuse_handlers[FUSE_LOOKUP] = fuse_ll_lookup;
+    fuse_ll->fuse_handlers[FUSE_SETATTR] = fuse_ll_setattr;
+    fuse_ll->fuse_handlers[FUSE_OPENDIR] = fuse_ll_opendir;
+    fuse_ll->fuse_handlers[FUSE_RELEASEDIR] = fuse_ll_releasedir;
+    fuse_ll->fuse_handlers[FUSE_READDIR] = fuse_ll_readdir;
+    fuse_ll->fuse_handlers[FUSE_READDIRPLUS] = fuse_ll_readdirplus;
+    fuse_ll->fuse_handlers[FUSE_OPEN] = fuse_ll_open;
+    fuse_ll->fuse_handlers[FUSE_RELEASE] = fuse_ll_release;
+    //// We don't impl FUSE_FLUSH. The only use would be to return w
+    //// but that's of no use with a remote file system
+    fuse_ll->fuse_handlers[FUSE_FSYNC] = fuse_ll_fsync;
+    fuse_ll->fuse_handlers[FUSE_FSYNCDIR] = fuse_ll_fsyncdir;
+    fuse_ll->fuse_handlers[FUSE_CREATE] = fuse_ll_create;
+    fuse_ll->fuse_handlers[FUSE_RMDIR] = fuse_ll_rmdir;
+    fuse_ll->fuse_handlers[FUSE_FORGET] = fuse_ll_forget;
+    fuse_ll->fuse_handlers[FUSE_BATCH_FORGET] = fuse_ll_batch_forget
+    fuse_ll->fuse_handlers[FUSE_RENAME] = fuse_ll_rename;
+    fuse_ll->fuse_handlers[FUSE_RENAME2] = fuse_ll_rename2;
+    fuse_ll->fuse_handlers[FUSE_READ] = fuse_ll_read;
+    fuse_ll->fuse_handlers[FUSE_WRITE] = fuse_ll_write;
+    fuse_ll->fuse_handlers[FUSE_MKNOD] = fuse_ll_mknod;
+    fuse_ll->fuse_handlers[FUSE_MKDIR] = fuse_ll_mkdir;
+    fuse_ll->fuse_handlers[FUSE_SYMLINK] = fuse_ll_symlink;
+    fuse_ll->fuse_handlers[FUSE_STATFS] = fuse_ll_statfs;
+    fuse_ll->fuse_handlers[FUSE_UNLINK] = fuse_ll_unlink;
+    fuse_ll->fuse_handlers[FUSE_READLINK] = fuse_ll_readlink;
+    fuse_ll->fuse_handlers[FUSE_FLUSH] = fuse_ll_flush;
+    fuse_ll->fuse_handlers[FUSE_SETLKW] = fuse_ll_setlkw;
+    fuse_ll->fuse_handlers[FUSE_SETLK] = fuse_ll_setlk;
+    fuse_ll->fuse_handlers[FUSE_FALLOCATE] = fuse_ll_fallocate;
+
