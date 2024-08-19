@@ -6,7 +6,7 @@ DPFS Arch:
 
 dpfs_kv/main.cpp -> main
     dpfs_fuse_main
-        dpfs_fuse_new
+        struct dpfs_fuse *fuse = dpfs_fuse_new(&ops, conf_path, vnfs, NULL, NULL)
             fuse_ll_map(f_ll)
             hal_params.ops.request_handler = fuse_handle_req;
                 fuse_handler_t h = fuse_ll->fuse_handlers[in_hdr->opcode]
@@ -22,7 +22,10 @@ dpfs_hal_new
     struct dpfs_hal *hal = calloc(1, sizeof(struct dpfs_hal))
     nvme_init_logger
     mlnx_snap_pci_manager_init
-    dpfs_hal_init_dev
+    dpfs_hal_init_dev(hal, dev, device_id, emu_manager.u.s, pf.u.i, tag.u.s, qd.u.i)
+        param.dev_type = "virtiofs_emu"
+        param.virtiofs_emu_handle_req = dpfs_hal_handle_req
+            hal->ops.request_handler(hal->user_data, in_iov, in_iovcnt, out_iov, out_iovcnt, done_ctx, dev->device_id)
         struct virtio_fs_ctrl_init_attr param
         struct virtio_fs_ctrl *snap_ctrl = virtio_fs_ctrl_init(&param)
         hal->ops.register_device(hal->user_data, device_id)
@@ -31,7 +34,6 @@ dpfs_hal_new
         virtio_fs_ctrl_progress
         virtio_fs_ctrl_suspend
 
-dpfs_hal_handle_req
 
 
 introduce:
@@ -84,7 +86,7 @@ fuse_ll_map
 
 
 
-dpfs_template/main.c -> main
+dpfs_template/main.c -> main -> 这是一个关于如何使用 DPFS 实现 virtio-fs 设备的示例模板，无需使用 DPFS-FUSE 层。这意味着后端必须自行实现和解释 FUSE ABI
     hal_params.ops.request_handler = fuse_handler
     struct dpfs_hal *hal = dpfs_hal_new(&hal_params, false)
     dpfs_hal_loop(hal)
@@ -101,3 +103,128 @@ dpfs_template/main.c -> main
                     virtio_fs_ctrl_progress(dev->snap_ctrl)
         stop_low_latency
             close(pm_qos_fd)
+
+create_session
+    create_session_cb
+        lookup_true_rootfh
+            lookup_true_rootfh_cb
+
+
+eRPC
+extern/eRPC-arm/README.md
+./scripts/do.sh 0 0
+scripts/example_autorun_app_file
+scripts/run-all.sh
+extern/eRPC-arm/hello_world/server.cc
+    nexus.register_req_func(kReqType, req_handler)
+        req_handler
+            resize_msg_buffer
+    rpc->run_event_loop(100000)
+extern/eRPC-arm/hello_world/client.cc
+    create_session
+    alloc_msg_buffer_or_die
+    enqueue_request
+    run_event_loop
+
+
+
+
+
+enqueue_request
+    void Rpc<TTr>::kick_req_st
+        enqueue_pkt_tx_burst_st
+            do_tx_burst_st
+                transport_->tx_burst(tx_burst_arr_, tx_batch_i_) -> void IBTransport::tx_burst
+                    int ret = ibv_post_send(qp, &send_wr[0], &bad_wr)
+                    
+
+dpfs_rvfs: remote virt fs
+dpfs_rvfs_dpu，此二进制文件使用 dpfs_hal virtio-fs 抽象层，并使用 RVFS 二进制格式的 eRPC 通过网络直接向远程服务器发送请求。RVFS 二进制格式此格式将描述远程虚拟文件系统协议，即通过 RPC 直接通过网络的 virtio-fs。格式可能会更改和正在进行中。此协议不直接向消费​​者/云租户公开，消费者/云租户使用 virtio-fs。因此，我们不会在网络格式中构建任何向后兼容性
+int main(int argc, char **argv)
+    hal_params.ops.request_handler = fuse_handler
+        resize_msg_buffer
+        enqueue_request
+    hal_params.ops.register_device = register_dpfs_device
+
+
+
+
+
+dpfs_nfs/main.c -> Implemented new HAL multi-tenancy threading in NFS -> https://github.com/ssbandjl/DPFS/commit/4d39510f51c8cffe26ae7cfe43d0f247b081d6b4
+    dpfs_nfs_main(server.u.s, export.u.s, 0.0, cq_polling.u.b, conf_path)
+        inode_table_init
+        struct fuse_ll_operations ops
+        dpfs_nfs_assign_ops(&ops)
+            ops->init = init;
+            ops->lookup = lookup;
+            ops->getattr = getattr;
+            // NFS accepts the NFS:fh
+            // its parameter to the d
+            ops->opendir = NULL;
+            ops->open = vopen;
+            ops->read = vread;
+            ops->write = vwrite;
+                struct write_cb_data *cb_data = mpool_alloc
+                cb_data->slotid = vnfs4_op_sequence(&op[0], conn, false)
+                struct inode *i = vnfs4_op_putfh_open
+                    struct inode *i = inode_table_get(vnfs->inodes, nodeid)
+                        size_t hash = inode_table_hash(t, fileid)
+                            return fileid % t->size
+                rpc_nfs4_compound_async2 vwrite_cb -> LIBNFS is a client library for accessing NFS shares over a network
+                    rpc_allocate_pdu2
+                        rpc_add_iovector
+                    rpc_queue_pdu(rpc, pdu)
+                        if (rpc->is_broadcast)
+                            sendto
+                        if (writev(rpc->fd, &iov[1], niov - 1)
+                        rpc_hash_xid
+                        rpc_enqueue(&rpc->waitpdu[hash], pdu)
+                            q->tail = pdu
+            ops->fsync = vfsync;
+            ops->release = release;
+            // NFS only does fsync(ak
+            ops->fsyncdir = NULL;
+            // The concept of flushin
+            ops->flush = NULL;
+            //ops->setattr = (typeof(
+            ops->statfs = statfs;
+            ops->destroy = destroy;
+        dpfs_fuse_new(&ops, conf_path, vnfs, NULL, NULL)
+        vnfs->nthreads = dpfs_fuse_nthreads(fuse)
+        mpool_init(&vnfs->p[i], sizeof(struct cb_data), 256)
+            *p = calloc(1, sizeof(struct mpool))
+            (*p)->buffer = malloc
+            ck_ring_init(&(*p)->ring, chunks) -> 初始化一个由 ring 指向的有界 FIFO 缓冲区，用于存储最多 size 个指针。size 参数必须是大于或等于 4 的 2 的幂
+            void *e = malloc(chunk_size)
+        vnfs->conns = calloc(vnfs->nthreads
+        vnfs_init_connections(vnfs)
+            struct nfs_context *nfs = nfs_init_context()
+                nfs->rpc = rpc_init_context()
+                rpc_current_time
+            nfs_set_version(nfs, NFS_V4)
+            nfs_get_rpc_context
+            nfs_mount(nfs, vnfs->server, vnfs->export)
+                nfs_mount_async(nfs, server, export, mount_cb, &cb_data)
+                    nfs3_mount_async
+                    or nfs4_mount_async
+                        rpc_connect_port_async
+                            rpc_connect_port_internal
+                                rpc_connect_async rpc_connect_program_4_cb
+                                    rpc_connect_sockaddr_async
+                                        connect
+                                    rpc_connect_program_4_cb
+                                        rpc_null_async rpc_connect_program_5_cb
+                                            rpc_allocate_pdu
+                                                rpc_allocate_pdu2
+                                            rpc_queue_pdu
+                                            rpc_connect_program_5_cb
+                                                data->cb
+                wait_for_nfs_reply
+                    nfs_service
+                        rpc_service(nfs->rpc, revents)
+            nfs_set_poll_timeout
+            nfs_mt_service_thread_start
+            exchangeid
+        dpfs_fuse_loop(fuse) -> dpfs_hal_loop
+        dpfs_fuse_destroy(fuse)
+        inode_table_destroy(vnfs->inodes)
